@@ -20,7 +20,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode }) => {
           "命运是分叉的花园，用你的双手拨开迷雾。"
         </p>
 
-        <div className="flex flex-col md:flex-row gap-8 mt-12">
+        <div className="flex flex-col md:flex-row gap-8 mt-12 justify-center items-center">
           <button
             onClick={() => setMode(AppMode.DRAWING)}
             className="group relative px-8 py-4 bg-transparent border border-amber-600 text-amber-500 overflow-hidden transition-all duration-500 hover:text-black hover:bg-amber-600"
