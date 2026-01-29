@@ -24,9 +24,9 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({ setMode }) => {
   return (
     <div className="w-full h-screen bg-black text-white flex flex-col">
       <div className="p-6 flex justify-between items-center border-b border-gray-900">
-        <h2 className="text-2xl text-amber-600 tracking-widest uppercase">The Archive</h2>
+        <h2 className="text-2xl text-amber-600 tracking-widest uppercase">塔罗档案</h2>
         <button onClick={() => setMode(AppMode.LANDING)} className="text-gray-500 hover:text-white uppercase text-xs tracking-widest">
-          Return
+          返回
         </button>
       </div>
 
@@ -50,7 +50,7 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({ setMode }) => {
             <div className="max-w-2xl text-center space-y-6">
               <h1 className="text-4xl md:text-5xl font-serif text-amber-500 mb-8">{selectedCard}</h1>
               {loading ? (
-                <div className="animate-pulse text-gray-600 tracking-widest">Consulting the oracles...</div>
+                <div className="animate-pulse text-gray-600 tracking-widest">正在咨询神谕...</div>
               ) : (
                 <p className="text-lg md:text-xl text-gray-300 leading-relaxed font-light font-serif">
                   {meaning}
@@ -58,7 +58,7 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({ setMode }) => {
               )}
             </div>
           ) : (
-            <div className="text-gray-700 uppercase tracking-[0.3em]">Select a card to reveal its secrets</div>
+            <div className="text-gray-700 uppercase tracking-[0.3em]">选择一张牌以揭示其奥秘</div>
           )}
         </div>
       </div>

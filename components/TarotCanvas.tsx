@@ -45,6 +45,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
   const [detectedGesture, setDetectedGesture] = useState<string>("Initializing...");
   const [reading, setReading] = useState<string | null>(null);
   const [loadingReading, setLoadingReading] = useState(false);
+  const [isReversed, setIsReversed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [, setForceUpdate] = useState(0);
   
@@ -168,7 +169,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
   useEffect(() => {
     const setupVision = async () => {
       try {
-        setDetectedGesture("Loading Vision...");
+        setDetectedGesture("加载视觉模型...");
         // @ts-ignore
         const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
         const { FilesetResolver, GestureRecognizer } = vision;
@@ -192,12 +193,12 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             videoRef.current.play();
-            setDetectedGesture("Camera Ready. Show Hand.");
+            setDetectedGesture("摄像头就绪。请展示手势。");
           }
         }
       } catch (e) {
         console.error("Failed to load MediaPipe", e);
-        setDetectedGesture("Vision Error. Check Camera.");
+        setDetectedGesture("视觉错误。请检查摄像头。");
       }
     };
     
@@ -331,14 +332,16 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
       const fetchReading = async () => {
         setLoadingReading(true);
         const cardName = TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length];
-        const isReversed = Math.random() > 0.8;
-        const text = await getTarotReading(cardName, isReversed);
+        const reversed = Math.random() > 0.5; // Increased chance for demo purposes, usually 0.2 or 0.5
+        setIsReversed(reversed);
+        const text = await getTarotReading(cardName, reversed);
         setReading(text);
         setLoadingReading(false);
       };
       fetchReading();
     } else if (gestureState !== GestureState.REVEALED) {
       setReading(null); 
+      setIsReversed(false);
     }
   }, [gestureState, reading, loadingReading]);
 
@@ -519,10 +522,10 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
                 // Draw simple symbol
                 ctx.font = "24px serif";
                 let symbol = "✦"; // Default Major Arcana
-                if (cardName.includes("Cups")) symbol = "🏆";
-                if (cardName.includes("Wands")) symbol = "🌿";
-                if (cardName.includes("Swords")) symbol = "⚔️";
-                if (cardName.includes("Pentacles")) symbol = "🪙";
+                if (cardName.includes("圣杯")) symbol = "🏆";
+                if (cardName.includes("权杖")) symbol = "🌿";
+                if (cardName.includes("宝剑")) symbol = "⚔️";
+                if (cardName.includes("星币")) symbol = "🪙";
                 
                 ctx.fillText(symbol, 0, 10);
                 
@@ -617,8 +620,15 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
       />
       
       <div className="absolute top-6 left-6 z-50 text-amber-600/50 font-mono text-xs tracking-widest pointer-events-none">
-        <div>SIGNAL: {detectedGesture.toUpperCase()}</div>
-        <div>STATE: {gestureState}</div>
+        <div>信号: {detectedGesture}</div>
+        <div>状态: {
+            {
+                [GestureState.STACKED]: "堆叠中",
+                [GestureState.SHUFFLING]: "洗牌中",
+                [GestureState.SELECTED]: "已选中",
+                [GestureState.REVEALED]: "已揭示"
+            }[gestureState]
+        }</div>
       </div>
       
       <div className="absolute top-6 right-6 z-50 flex flex-col gap-3 pointer-events-auto">
@@ -632,19 +642,19 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
           onClick={toggleFullscreen}
           className="px-6 py-2 border border-gray-800 text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors uppercase text-xs tracking-widest bg-black/50 backdrop-blur-sm"
         >
-          {isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          {isFullscreen ? '退出全屏' : '进入全屏'}
         </button>
       </div>
 
       <div className="absolute bottom-12 left-0 w-full text-center pointer-events-none transition-opacity duration-500">
         {gestureState === GestureState.STACKED && (
-          <p className="text-gray-400 font-serif italic tracking-widest opacity-60">Open your hand to scatter the fates.</p>
+          <p className="text-gray-400 font-serif italic tracking-widest opacity-60">张开手掌，散开命运之牌。</p>
         )}
         {gestureState === GestureState.SHUFFLING && (
-          <p className="text-amber-500/80 font-serif italic tracking-widest animate-pulse">Raise one finger to choose a path.</p>
+          <p className="text-amber-500/80 font-serif italic tracking-widest animate-pulse">竖起手指，选择一条路径。</p>
         )}
         {gestureState === GestureState.SELECTED && (
-          <p className="text-white font-serif tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">Shake your finger to reveal the truth.</p>
+          <p className="text-white font-serif tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">摇动手指，揭示真理。</p>
         )}
       </div>
 
@@ -652,15 +662,15 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
         <div className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-xl px-6 text-center transition-all duration-1000 ${reading ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div className="bg-black/80 backdrop-blur-md p-8 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto">
             <h3 className="text-amber-500 text-3xl font-serif mb-4 uppercase tracking-[0.2em] border-b border-amber-900/50 pb-4 inline-block">
-              {TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]}
+              {TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} {isReversed ? "(逆位)" : "(正位)"}
             </h3>
             <div className="text-gray-300 leading-loose font-serif text-lg">
                {loadingReading ? (
-                   <span className="animate-pulse">Consulting the void...</span>
+                   <span className="animate-pulse">正在向虚空寻求指引...</span>
                ) : reading}
             </div>
             <div className="mt-6 text-xs text-gray-600 uppercase tracking-widest">
-                Close your hand to stack the deck
+                握拳收起卡牌
             </div>
           </div>
         </div>

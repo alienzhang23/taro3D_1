@@ -17,7 +17,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode }) => {
           Arcana
         </h1>
         <p className="text-gray-400 text-lg md:text-xl max-w-xl mx-auto italic font-light tracking-wider">
-          "Fate is a garden of forking paths. Use your hands to part the mist."
+          "命运是分叉的花园，用你的双手拨开迷雾。"
         </p>
 
         <div className="flex flex-col md:flex-row gap-8 mt-12">
@@ -25,20 +25,20 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode }) => {
             onClick={() => setMode(AppMode.DRAWING)}
             className="group relative px-8 py-4 bg-transparent border border-amber-600 text-amber-500 overflow-hidden transition-all duration-500 hover:text-black hover:bg-amber-600"
           >
-            <span className="relative z-10 tracking-widest text-sm uppercase">Begin Ritual</span>
+            <span className="relative z-10 tracking-widest text-sm uppercase">开始占卜</span>
           </button>
 
           <button
             onClick={() => setMode(AppMode.LEARNING)}
             className="group relative px-8 py-4 bg-transparent border border-gray-600 text-gray-400 overflow-hidden transition-all duration-500 hover:text-white hover:border-white"
           >
-             <span className="relative z-10 tracking-widest text-sm uppercase">Study the Glyphs</span>
+             <span className="relative z-10 tracking-widest text-sm uppercase">研习图谱</span>
           </button>
         </div>
       </div>
       
       <div className="absolute bottom-10 text-gray-600 text-xs tracking-widest uppercase">
-        Use camera to interact · Turn up sound
+        使用摄像头进行交互 · 开启声音体验更佳
       </div>
     </div>
   );
