@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GestureState, Particle } from '../types';
-import { TAROT_DECK, TOTAL_CARDS, CARD_RATIO, getCardImageUrl } from '../constants';
+import { TAROT_DECK, TOTAL_CARDS, CARD_RATIO, getCardImage } from '../constants';
 import { getTarotReading } from '../services/geminiService';
 import { StarfieldBackground } from './StarfieldBackground';
 
@@ -148,7 +148,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
     if (selectedIndexRef.current === -1) return;
     
     const cardName = TAROT_DECK[selectedIndexRef.current];
-    const url = getCardImageUrl(cardName);
+    const url = getCardImage(cardName);
     
     // Check if we need to load a new image
     if (currentImageSrcRef.current !== url) {

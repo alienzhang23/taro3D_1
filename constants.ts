@@ -115,19 +115,14 @@ const CARD_IMAGE_MAP: Record<string, string> = {
   "星币侍从": "Pentacles11.jpg",
   "星币骑士": "Pentacles12.jpg",
   "星币王后": "Pentacles13.jpg",
-  "星币国王": "Pentacles14.jpg",
+  "星币国王": "Pentacles14.jpg"
 };
 
-export const getCardImageUrl = (cardName: string): string => {
-  const fileName = CARD_IMAGE_MAP[cardName];
-  if (fileName) {
-    return `/cards/${fileName}`;
+export const getCardImage = (cardName: string): string => {
+  const filename = CARD_IMAGE_MAP[cardName];
+  if (!filename) {
+    console.warn(`Image not found for card: ${cardName}`);
+    return "/card_bg.jpg"; // Fallback to card back
   }
-
-  const fallback = cardName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  return `/cards/${fallback}.jpg`;
+  return `/cards/${filename}`;
 };

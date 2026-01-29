@@ -1,4 +1,4 @@
-import { getReading, getGeneralMeaning } from '../tarotMeanings';
+import { getReading, getGeneralMeaning, getFullMeaning } from '../tarotMeanings';
 
 const API_KEY = process.env.API_KEY;
 
@@ -45,6 +45,18 @@ export const getTarotReading = async (cardName: string, isReversed: boolean): Pr
   }
 };
 
-export const getCardMeaning = async (cardName: string): Promise<string> => {
-  return Promise.resolve(getGeneralMeaning(cardName));
+export const getCardMeaning = async (cardName: string): Promise<{ text: string; fullMeaning: any }> => {
+  const fullMeaning = getFullMeaning(cardName);
+  
+  if (!fullMeaning) {
+    return Promise.resolve({
+      text: "未找到该牌的含义。",
+      fullMeaning: { upright: "", reversed: "", general: "未找到该牌的含义。" }
+    });
+  }
+
+  return Promise.resolve({ 
+    text: fullMeaning.general,
+    fullMeaning: fullMeaning
+  });
 };
