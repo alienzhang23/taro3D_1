@@ -1,8 +1,8 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { GestureState, Particle } from '../types';
+import { DivinationPlan, DrawnCard, GestureState, Particle } from '../types';
 import { TAROT_DECK, TOTAL_CARDS, CARD_RATIO, getCardImage } from '../constants';
-import { getTarotReading } from '../services/geminiService';
+import { getAiRuntimeInfo, getLastAiCall, getTarotReading } from '../services/geminiService';
 import { StarfieldBackground } from './StarfieldBackground';
 
 interface CardEntity {
@@ -32,9 +32,157 @@ interface CardEntity {
 
 interface TarotCanvasProps {
   onExit: () => void;
+  question: string;
+  plan: DivinationPlan | null;
 }
 
-export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
+const isProbablyHtml = (value: string): boolean => {
+  const t = value.trim();
+  return t.startsWith('<') && t.includes('>');
+};
+
+const escapeHtml = (value: string): string => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const sanitizeReadingHtml = (html: string): string => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const Parser = (window as any).DOMParser as typeof DOMParser | undefined;
+    if (!Parser) return `<pre>${escapeHtml(html)}</pre>`;
+    const parser = new Parser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const body = doc.body || doc.getElementsByTagName('body')[0];
+    if (!body) return `<pre>${escapeHtml(html)}</pre>`;
+
+    const allowedTags = new Set([
+      'SECTION',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'P',
+      'UL',
+      'OL',
+      'LI',
+      'STRONG',
+      'EM',
+      'B',
+      'I',
+      'BR',
+      'HR',
+      'BLOCKQUOTE',
+      'DIV',
+      'SPAN',
+      'CODE',
+      'PRE'
+    ]);
+
+    const elementNodeType = (window as any).Node?.ELEMENT_NODE ?? 1;
+
+    const walk = (node: Node) => {
+      if (node.nodeType === elementNodeType) {
+        const el = node as Element;
+        const tag = el.tagName.toUpperCase();
+
+        if (!allowedTags.has(tag)) {
+          const parent = el.parentNode;
+          if (parent) {
+            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+            parent.removeChild(el);
+            return;
+          }
+        } else {
+          for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on')) {
+              el.removeAttribute(attr.name);
+              continue;
+            }
+            if (name === 'style') {
+              const v = (attr.value || '').toLowerCase();
+              if (v.includes('expression') || v.includes('url(')) el.removeAttribute(attr.name);
+              continue;
+            }
+            el.removeAttribute(attr.name);
+          }
+        }
+      }
+
+      for (const child of Array.from(node.childNodes)) {
+        walk(child);
+      }
+    };
+
+    walk(body);
+    return body.innerHTML.trim();
+  } catch {
+    return `<pre>${escapeHtml(html)}</pre>`;
+  }
+};
+
+const buildProgressiveHtmlFrames = (safeHtml: string): string[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const Parser = (window as any).DOMParser as typeof DOMParser | undefined;
+    if (!Parser) return [safeHtml];
+    const parser = new Parser();
+    const doc = parser.parseFromString(safeHtml, 'text/html');
+    const body = doc.body || doc.getElementsByTagName('body')[0];
+    if (!body) return [safeHtml];
+
+    const nodesToHtml = (nodes: ChildNode[]) => {
+      const out: string[] = [];
+      for (const n of nodes) {
+        if ((n as any).outerHTML && typeof (n as any).outerHTML === 'string') {
+          out.push((n as any).outerHTML);
+        } else if (n.nodeType === ((window as any).Node?.TEXT_NODE ?? 3)) {
+          const text = (n.textContent || '').trim();
+          if (text) out.push(`<p>${escapeHtml(text)}</p>`);
+        }
+      }
+      return out;
+    };
+
+    const bodyChildren = Array.from(body.childNodes);
+    const onlyElementChildren = bodyChildren.filter(n => n.nodeType === ((window as any).Node?.ELEMENT_NODE ?? 1));
+    const isSingleSection =
+      bodyChildren.length === 1 &&
+      onlyElementChildren.length === 1 &&
+      (onlyElementChildren[0] as Element).tagName.toUpperCase() === 'SECTION';
+
+    let parts: string[] = [];
+    if (isSingleSection) {
+      const section = onlyElementChildren[0] as Element;
+      parts = nodesToHtml(Array.from(section.childNodes));
+    } else {
+      parts = nodesToHtml(bodyChildren);
+    }
+
+    if (!parts.length) return [safeHtml];
+    const frames: string[] = [];
+    for (let i = 1; i <= parts.length; i++) {
+      frames.push(`<section>${parts.slice(0, i).join('')}</section>`);
+    }
+    return frames;
+  } catch {
+    return [safeHtml];
+  }
+};
+
+const fallbackPlan: DivinationPlan = {
+  type: 'single',
+  spreadName: '单张牌',
+  cardCount: 1,
+  positions: [{ name: '主题', meaning: '问题核心' }]
+};
+
+export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const debugCanvasRef = useRef<HTMLCanvasElement>(null); 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -50,6 +198,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
   const [isReversed, setIsReversed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [, setForceUpdate] = useState(0);
+  const [selectedCards, setSelectedCards] = useState<DrawnCard[]>([]);
   
   // Physics Refs
   const cardsRef = useRef<CardEntity[]>([]);
@@ -59,16 +208,43 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
   const fingerXHistory = useRef<number[]>([]);
   const lastShakeCheckTime = useRef<number>(0);
   const timeRef = useRef<number>(0);
+  const selectedCardsRef = useRef<DrawnCard[]>([]);
+  const closeHoldStartedAtRef = useRef<number>(0);
   
   // Hand Motion Tracking
   const handPosRef = useRef<{x: number, y: number} | null>(null);
   const handVelocityRef = useRef<{x: number, y: number}>({ x: 0, y: 0 });
   
   // Image Loading Ref
-  const loadedCardImageRef = useRef<HTMLImageElement | null>(null);
   const loadedBackImageRef = useRef<HTMLImageElement | null>(null);
-  const currentImageSrcRef = useRef<string | null>(null);
-  const imageLoadErrorRef = useRef<boolean>(false);
+  const cardImageCacheRef = useRef<Map<number, HTMLImageElement>>(new Map());
+  const cardImageLoadingRef = useRef<Set<number>>(new Set());
+  const cardImageErrorRef = useRef<Set<number>>(new Set());
+
+  const currentPlan = plan || fallbackPlan;
+  const drawnDeckIndicesRef = useRef<number[]>([]);
+
+  const ensureCardImageLoaded = useCallback((deckIndex: number) => {
+    if (deckIndex < 0 || deckIndex >= TAROT_DECK.length) return;
+    if (cardImageCacheRef.current.has(deckIndex)) return;
+    if (cardImageErrorRef.current.has(deckIndex)) return;
+    if (cardImageLoadingRef.current.has(deckIndex)) return;
+    const cardName = TAROT_DECK[deckIndex];
+    const url = getCardImage(cardName);
+    const img = new Image();
+    cardImageLoadingRef.current.add(deckIndex);
+    img.onload = () => {
+      cardImageLoadingRef.current.delete(deckIndex);
+      cardImageCacheRef.current.set(deckIndex, img);
+      setForceUpdate(n => n + 1);
+    };
+    img.onerror = () => {
+      cardImageLoadingRef.current.delete(deckIndex);
+      cardImageErrorRef.current.add(deckIndex);
+      setForceUpdate(n => n + 1);
+    };
+    img.src = url;
+  }, []);
 
   // Preload Card Back
   useEffect(() => {
@@ -143,38 +319,11 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
     selectedIndexRef.current = Math.floor(Math.random() * TOTAL_CARDS);
   }, []);
 
-  // Image Loading Effect
   useEffect(() => {
-    if (selectedIndexRef.current === -1) return;
-    
-    const cardName = TAROT_DECK[selectedIndexRef.current];
-    const url = getCardImage(cardName);
-    
-    // Check if we need to load a new image
-    if (currentImageSrcRef.current !== url) {
-        currentImageSrcRef.current = url;
-        imageLoadErrorRef.current = false;
-        loadedCardImageRef.current = null;
-        
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-            if (currentImageSrcRef.current === url) { // Race condition check
-                loadedCardImageRef.current = img;
-                imageLoadErrorRef.current = false;
-                setForceUpdate(n => n + 1);
-            }
-        };
-        img.onerror = () => {
-            if (currentImageSrcRef.current === url) {
-                console.warn(`Failed to load image: ${url}. Will render procedural card.`);
-                imageLoadErrorRef.current = true;
-                setForceUpdate(n => n + 1);
-            }
-        };
-        img.src = url;
-    }
-  }, [selectedIndexRef.current, gestureState]); // Re-run if gestureState changes (shuffle might pick new card)
+    selectedCards.forEach((card) => {
+      if (typeof card.deckIndex === 'number') ensureCardImageLoaded(card.deckIndex);
+    });
+  }, [selectedCards, ensureCardImageLoaded]);
 
 
   // Setup MediaPipe
@@ -297,18 +446,34 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
             setDetectedGesture(gestureName);
 
             if (gestureName === "Closed_Fist") {
-                setGestureState(GestureState.STACKED);
+                const now = Date.now();
+                if (gestureState === GestureState.REVEALED) {
+                  if (!closeHoldStartedAtRef.current) closeHoldStartedAtRef.current = now;
+                  if (now - closeHoldStartedAtRef.current > 650) {
+                    closeHoldStartedAtRef.current = 0;
+                    setGestureState(GestureState.STACKED);
+                  }
+                } else {
+                  closeHoldStartedAtRef.current = 0;
+                  setGestureState(GestureState.STACKED);
+                }
             } 
             else if (gestureName === "Open_Palm") {
+                closeHoldStartedAtRef.current = 0;
+                if (gestureState === GestureState.REVEALED) return;
                 if (gestureState !== GestureState.SHUFFLING) {
                     // New Random Pick on Start Shuffle
                     selectedIndexRef.current = Math.floor(Math.random() * TOTAL_CARDS);
-                    // Reset Image Load
-                    currentImageSrcRef.current = null;
+                    setReading(null);
+                    setIsReversed(false);
+                    setSelectedCards([]);
+                    selectedCardsRef.current = [];
+                    drawnDeckIndicesRef.current = [];
                 }
                 setGestureState(GestureState.SHUFFLING);
             } 
             else if (gestureName === "Pointing_Up") {
+                closeHoldStartedAtRef.current = 0;
                 if (gestureState === GestureState.SHUFFLING || gestureState === GestureState.STACKED) {
                     setGestureState(GestureState.SELECTED);
                 }
@@ -324,18 +489,73 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
                         const max = Math.max(...fingerXHistory.current);
                         const min = Math.min(...fingerXHistory.current);
                         if (max - min > 0.12 && gestureState === GestureState.SELECTED) { 
-                            setGestureState(GestureState.REVEALED);
+                            let nextShakeAllowedAt = now;
+                            const targetCount = currentPlan.type === 'spread' ? currentPlan.cardCount : 1;
+                            if (currentPlan.type === 'spread' && targetCount > 1) {
+                              const positions = currentPlan.positions || [];
+                              const deckLen = TAROT_DECK.length;
+                              const existing = selectedCardsRef.current;
+
+                              if (existing.length >= targetCount) {
+                                setGestureState(GestureState.REVEALED);
+                                lastShakeCheckTime.current = now;
+                                return;
+                              }
+
+                              const used = new Set<number>(drawnDeckIndicesRef.current);
+                              let deckIndex = ((selectedIndexRef.current % deckLen) + deckLen) % deckLen;
+                              if (used.has(deckIndex)) {
+                                const candidates: number[] = [];
+                                for (let i = 0; i < deckLen; i++) {
+                                  if (!used.has(i)) candidates.push(i);
+                                }
+                                deckIndex = candidates.length
+                                  ? candidates[Math.floor(Math.random() * candidates.length)]
+                                  : ((selectedIndexRef.current % deckLen) + deckLen) % deckLen;
+                              }
+
+                              const next: DrawnCard = {
+                                name: TAROT_DECK[deckIndex],
+                                isReversed: Math.random() > 0.5,
+                                position: positions[existing.length]?.name,
+                                deckIndex
+                              };
+
+                              const nextCards = [...existing, next];
+                              selectedCardsRef.current = nextCards;
+                              drawnDeckIndicesRef.current = [...drawnDeckIndicesRef.current, deckIndex];
+                              setSelectedCards(nextCards);
+
+                              if (nextCards.length < targetCount) {
+                                const candidates: number[] = [];
+                                const used2 = new Set<number>(drawnDeckIndicesRef.current);
+                                for (let i = 0; i < deckLen; i++) {
+                                  if (!used2.has(i)) candidates.push(i);
+                                }
+                                if (candidates.length) {
+                                  selectedIndexRef.current = candidates[Math.floor(Math.random() * candidates.length)];
+                                }
+                              } else {
+                                nextShakeAllowedAt = now + 650;
+                              }
+                            } else {
+                              setGestureState(GestureState.REVEALED);
+                            }
+                            lastShakeCheckTime.current = nextShakeAllowedAt;
+                            return;
                         }
-                        lastShakeCheckTime.current = now;
                     }
                 }
+            }
+            else {
+                closeHoldStartedAtRef.current = 0;
             }
         }
       } catch (err) {
         // Suppress noise
       }
     }
-  }, [gestureState]);
+  }, [gestureState, currentPlan]);
 
 
   // AI Trigger
@@ -343,24 +563,63 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
     if (gestureState === GestureState.REVEALED && !reading && !loadingReading) {
       const fetchReading = async () => {
         setLoadingReading(true);
-        const cardName = TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length];
-        const reversed = Math.random() > 0.5; // Increased chance for demo purposes, usually 0.2 or 0.5
-        setIsReversed(reversed);
-        const text = await getTarotReading(cardName, reversed);
-        setReading(text);
-        setLoadingReading(false);
+        const baseIndex = selectedIndexRef.current % TAROT_DECK.length;
+        const baseCard = TAROT_DECK[baseIndex];
+        let cards = selectedCardsRef.current;
+        if (!cards.length) {
+          const single: DrawnCard = { name: baseCard, isReversed: Math.random() > 0.5, position: currentPlan.positions?.[0]?.name, deckIndex: baseIndex };
+          cards = [single];
+          selectedCardsRef.current = cards;
+          drawnDeckIndicesRef.current = [baseIndex];
+          setSelectedCards(cards);
+          setIsReversed(single.isReversed);
+        }
+        try {
+          const text = await getTarotReading(baseCard, cards[0]?.isReversed ?? false, question, currentPlan, cards);
+          setReading(text);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          setReading(`AI 调用失败。\n错误：${msg}`);
+        } finally {
+          setLoadingReading(false);
+        }
       };
       fetchReading();
     } else if (gestureState !== GestureState.REVEALED) {
-      setReading(null); 
+      setReading(null);
       setIsReversed(false);
+      setSelectedCards([]);
+      selectedCardsRef.current = [];
+      drawnDeckIndicesRef.current = [];
     }
-  }, [gestureState, reading, loadingReading]);
+  }, [gestureState, reading, loadingReading, question, currentPlan]);
 
 
   // Typewriter Effect for Reading
   useEffect(() => {
     if (reading) {
+      if (isProbablyHtml(reading)) {
+        const safe = sanitizeReadingHtml(reading);
+        const frames = buildProgressiveHtmlFrames(safe);
+        if (!frames.length) {
+          setDisplayedReading(safe || reading);
+          return;
+        }
+
+        setDisplayedReading(frames[0]);
+        if (frames.length === 1) return;
+
+        let idx = 1;
+        const intervalId = setInterval(() => {
+          if (idx < frames.length) {
+            setDisplayedReading(frames[idx]);
+            idx++;
+          } else {
+            clearInterval(intervalId);
+          }
+        }, 200);
+        return () => clearInterval(intervalId);
+      }
       setDisplayedReading("");
       let currentIndex = 0;
       const intervalId = setInterval(() => {
@@ -402,13 +661,22 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
       : 0;
     
     const currentEase = (gestureState === GestureState.SELECTED || gestureState === GestureState.REVEALED) ? 0.02 : 0.08;
+    const isSpread = currentPlan.type === 'spread' && currentPlan.cardCount > 1;
+    const targetCount = isSpread ? currentPlan.cardCount : 1;
+    const drawnDeckIndices = drawnDeckIndicesRef.current;
+    const drawnSet = isSpread ? new Set<number>(drawnDeckIndices) : null;
+    const spreadSpacing = Math.min(window.innerWidth * 0.28, 260);
+    const revealSpacingX = Math.min(window.innerWidth * 0.22, 220);
+    const revealSpacingY = Math.min(window.innerHeight * 0.26, 240);
+    const revealCols = isSpread ? Math.min(5, targetCount) : 1;
+    const revealRows = isSpread ? Math.ceil(targetCount / revealCols) : 1;
+    const revealBaseY = cy + revealedCardLift;
+    const bottomY = window.innerHeight * 0.78;
+    const bottomSpacing = Math.min(window.innerWidth * 0.08, 90);
+    const bottomFan = 0.08;
     
     cardsRef.current.forEach((card, i) => {
       const isSelected = i === selectedIndexRef.current;
-      
-      if (!isSelected || gestureState !== GestureState.REVEALED) {
-          card.targetRotY = 0;
-      }
 
       if (gestureState === GestureState.STACKED) {
         card.targetX = cx;
@@ -441,20 +709,73 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
         card.targetRotY = 0;
       } 
       else if (gestureState === GestureState.SELECTED || gestureState === GestureState.REVEALED) {
-        if (isSelected) {
-          card.targetX = cx;
-          card.targetY = cy + revealedCardLift;
-          card.targetZ = 3.0; 
-          card.targetRotZ = 0;
-          if (gestureState === GestureState.REVEALED) {
-             card.targetRotY = Math.PI;
+        if (isSpread && drawnSet) {
+          if (drawnSet.has(i)) {
+            const order = drawnDeckIndices.indexOf(i);
+            if (gestureState === GestureState.SELECTED) {
+              const count = drawnDeckIndices.length;
+              const startX = cx - (count - 1) * bottomSpacing / 2;
+              card.targetX = startX + order * bottomSpacing;
+              card.targetY = bottomY;
+              card.targetZ = 1.15;
+              card.targetRotZ = (order - (count - 1) / 2) * bottomFan;
+              card.targetRotY = 0;
+            } else {
+              if (targetCount === 3) {
+                card.targetX = cx + (order - 1) * spreadSpacing;
+                card.targetY = revealBaseY;
+                card.targetZ = 2.6;
+                card.targetRotZ = 0;
+              } else {
+                const col = order % revealCols;
+                const row = Math.floor(order / revealCols);
+                const gridW = (revealCols - 1) * revealSpacingX;
+                const gridH = (revealRows - 1) * revealSpacingY;
+                card.targetX = cx - gridW / 2 + col * revealSpacingX;
+                card.targetY = revealBaseY - gridH / 2 + row * revealSpacingY;
+                card.targetZ = targetCount > 6 ? 1.9 : 2.2;
+                card.targetRotZ = 0;
+              }
+              card.targetRotY = Math.PI;
+            }
+          } else if (isSelected && gestureState === GestureState.SELECTED && drawnDeckIndices.length < targetCount) {
+            card.targetX = cx;
+            card.targetY = cy;
+            card.targetZ = 3.0;
+            card.targetRotZ = 0;
+            card.targetRotY = 0;
+          } else {
+            const t = time;
+            const spreadX = window.innerWidth * 1.05;
+            const spreadY = window.innerHeight * 1.05;
+            const freqX = card.speed * 1.7;
+            const freqY = card.speed * 1.35;
+            const nx = Math.sin(t * freqX + card.phaseX);
+            const ny = Math.cos(t * freqY + card.phaseY);
+            const nx2 = Math.sin(t * freqX * 2.9 + i);
+            const ny2 = Math.cos(t * freqY * 2.6 + i);
+
+            card.targetX = cx + (nx * 0.65 + nx2 * 0.35) * (spreadX / 2);
+            card.targetY = cy + (ny * 0.65 + ny2 * 0.35) * (spreadY / 2);
+            card.targetZ = 0.55 + Math.sin(t * 0.0012 + i) * 0.18;
+            card.targetRotZ = (t * 0.00035 + i * 0.15);
+            card.targetRotY = 0;
           }
         } else {
-          const angle = (i / TOTAL_CARDS) * Math.PI * 8 + time * 0.0001;
-          const dist = Math.max(window.innerWidth, window.innerHeight) * 1.2; 
-          card.targetX = cx + Math.cos(angle) * dist;
-          card.targetY = cy + Math.sin(angle) * dist;
-          card.targetZ = 0.1;
+          if (isSelected) {
+            card.targetX = cx;
+            card.targetY = cy + revealedCardLift;
+            card.targetZ = 3.0; 
+            card.targetRotZ = 0;
+            card.targetRotY = gestureState === GestureState.REVEALED ? Math.PI : 0;
+          } else {
+            const angle = (i / TOTAL_CARDS) * Math.PI * 8 + time * 0.0001;
+            const dist = Math.max(window.innerWidth, window.innerHeight) * 1.2; 
+            card.targetX = cx + Math.cos(angle) * dist;
+            card.targetY = cy + Math.sin(angle) * dist;
+            card.targetZ = 0.1;
+            card.targetRotY = 0;
+          }
         }
       }
 
@@ -470,6 +791,11 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
       card.rotX += (card.targetRotX - card.rotX) * currentEase;
       card.rotY += (card.targetRotY - card.rotY) * 0.05;
     });
+
+    const reversedByDeckIndex = new Map<number, boolean>();
+    for (const c of selectedCardsRef.current) {
+      if (typeof c.deckIndex === 'number') reversedByDeckIndex.set(c.deckIndex, Boolean(c.isReversed));
+    }
 
     const sortedCards = [...cardsRef.current].sort((a, b) => a.z - b.z);
 
@@ -541,19 +867,22 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
             }
         } else {
             // FRONT DESIGN
-            const isSelectedCard = card.id === selectedIndexRef.current;
-            
-            if (isSelectedCard && loadedCardImageRef.current && !imageLoadErrorRef.current) {
-                // RENDER IMAGE
+            const deckIndex = card.id % TAROT_DECK.length;
+            if (reversedByDeckIndex.get(deckIndex)) ctx.rotate(Math.PI);
+            const shouldRender = deckIndex === (selectedIndexRef.current % TAROT_DECK.length) || drawnDeckIndicesRef.current.includes(deckIndex);
+            const cached = cardImageCacheRef.current.get(deckIndex);
+            const hasError = cardImageErrorRef.current.has(deckIndex);
+
+            if (shouldRender && cached) {
                 try {
                   ctx.fillStyle = "#fff";
                   ctx.fillRect(-w/2, -h/2, w, h);
-                  ctx.drawImage(loadedCardImageRef.current, -w/2, -h/2, w, h);
+                  ctx.drawImage(cached, -w/2, -h/2, w, h);
                 } catch (e) {
-                   ctx.fillStyle = "#fff";
-                   ctx.fillRect(-w/2, -h/2, w, h);
+                  ctx.fillStyle = "#fff";
+                  ctx.fillRect(-w/2, -h/2, w, h);
                 }
-            } else if (isSelectedCard && imageLoadErrorRef.current) {
+            } else if (shouldRender && hasError) {
                 // RENDER PROCEDURAL FALLBACK
                 ctx.fillStyle = "#f3e5ab"; // Parchment color
                 ctx.fillRect(-w/2, -h/2, w, h);
@@ -570,7 +899,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
                 ctx.textAlign = "center";
                 ctx.font = "bold 8px serif";
                 
-                const cardName = TAROT_DECK[card.id % TAROT_DECK.length];
+                const cardName = TAROT_DECK[deckIndex];
                 const parts = cardName.split(' ');
                 
                 // Draw card name
@@ -607,35 +936,54 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
 
     // Particles - Loop Backwards to safely remove
     if (gestureState === GestureState.SELECTED || gestureState === GestureState.REVEALED) {
-       const mainCard = cardsRef.current[selectedIndexRef.current];
-       const w = mainCard.width * mainCard.z;
-       const h = mainCard.height * mainCard.z;
-       
-       for(let k=0; k<4; k++) {
-           const perimeter = (w + h) * 2;
-           const pos = Math.random() * perimeter;
-           let px=0, py=0;
-           
-           if (pos < w) { px = pos - w/2; py = -h/2; }
-           else if (pos < w + h) { px = w/2; py = (pos - w) - h/2; }
-           else if (pos < w*2 + h) { px = (pos - w - h) - w/2; py = h/2; }
-           else { px = -w/2; py = (pos - w*2 - h) - h/2; }
+       const isThreeCardSpread = currentPlan.type === 'spread' && currentPlan.cardCount === 3;
+       const drawnDeckIndices = drawnDeckIndicesRef.current;
+       const indices = new Set<number>();
 
-           const cos = Math.cos(mainCard.rotZ);
-           const sin = Math.sin(mainCard.rotZ);
-           const rpx = px * cos - py * sin;
-           const rpy = px * sin + py * cos;
+       if (isThreeCardSpread) {
+         for (const idx of drawnDeckIndices) indices.add(idx);
+         if (gestureState === GestureState.SELECTED && drawnDeckIndices.length < 3) {
+           indices.add(selectedIndexRef.current);
+         }
+         if (indices.size === 0) indices.add(selectedIndexRef.current);
+       } else {
+         indices.add(selectedIndexRef.current);
+       }
 
-           particlesRef.current.push({
-               x: mainCard.x + rpx,
-               y: mainCard.y + rpy,
-               vx: (Math.random() - 0.5) * 2,
-               vy: (Math.random() - 0.5) * 2 - 1.0,
-               life: 1.0,
-               maxLife: 1.0,
-               size: Math.random() * 3 + 1,
-               color: "212, 175, 55" // Gold RGB
-           });
+       const particlesPerCard = isThreeCardSpread ? 2 : 4;
+
+       for (const idx of indices) {
+         const mainCard = cardsRef.current[idx];
+         if (!mainCard) continue;
+         const w = mainCard.width * mainCard.z;
+         const h = mainCard.height * mainCard.z;
+
+         for(let k=0; k<particlesPerCard; k++) {
+             const perimeter = (w + h) * 2;
+             const pos = Math.random() * perimeter;
+             let px=0, py=0;
+             
+             if (pos < w) { px = pos - w/2; py = -h/2; }
+             else if (pos < w + h) { px = w/2; py = (pos - w) - h/2; }
+             else if (pos < w*2 + h) { px = (pos - w - h) - w/2; py = h/2; }
+             else { px = -w/2; py = (pos - w*2 - h) - h/2; }
+
+             const cos = Math.cos(mainCard.rotZ);
+             const sin = Math.sin(mainCard.rotZ);
+             const rpx = px * cos - py * sin;
+             const rpy = px * sin + py * cos;
+
+             particlesRef.current.push({
+                 x: mainCard.x + rpx,
+                 y: mainCard.y + rpy,
+                 vx: (Math.random() - 0.5) * 2,
+                 vy: (Math.random() - 0.5) * 2 - 1.0,
+                 life: 1.0,
+                 maxLife: 1.0,
+                 size: Math.random() * 3 + 1,
+                 color: "212, 175, 55"
+             });
+         }
        }
     }
 
@@ -668,6 +1016,13 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
   }, [animate]);
+
+  const renderedReading = displayedReading || reading || '';
+  const isHtmlDisplayed = renderedReading ? isProbablyHtml(renderedReading) : false;
+  const safeDisplayedHtml = React.useMemo(() => {
+    if (!renderedReading || !isHtmlDisplayed) return '';
+    return sanitizeReadingHtml(renderedReading);
+  }, [renderedReading, isHtmlDisplayed]);
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden cursor-none">
@@ -709,6 +1064,34 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
         </button>
       </div>
 
+      {(currentPlan.type === 'spread' && currentPlan.cardCount > 1 && gestureState !== GestureState.REVEALED) && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="px-5 py-3 bg-black/45 backdrop-blur-md border border-amber-900/40 shadow-[0_0_30px_rgba(0,0,0,0.8)] text-center">
+            <div className="text-amber-400 font-serif tracking-[0.25em] text-lg drop-shadow-[0_0_16px_rgba(212,175,55,0.35)]">
+              {currentPlan.spreadName}
+            </div>
+            <div className="mt-1 text-xs text-amber-500/70 tracking-widest">
+              {selectedCards.length}/{currentPlan.cardCount} 已抽取
+            </div>
+            {gestureState === GestureState.SHUFFLING && (
+              <div className="mt-2 text-sm text-gray-200/90 font-serif tracking-widest">
+                竖起手指开始抽牌
+              </div>
+            )}
+            {gestureState === GestureState.SELECTED && selectedCards.length < currentPlan.cardCount && (
+              <div className="mt-2 text-sm text-gray-200/90 font-serif tracking-widest">
+                摇动手指抽取第 {selectedCards.length + 1} 张
+              </div>
+            )}
+            {gestureState === GestureState.SELECTED && selectedCards.length >= currentPlan.cardCount && (
+              <div className="mt-2 text-sm text-gray-200/90 font-serif tracking-widest">
+                已抽完，摇动手指一起翻开
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="absolute bottom-12 left-0 w-full text-center pointer-events-none transition-opacity duration-500">
         {gestureState === GestureState.STACKED && (
           <p className="text-gray-400 font-serif italic tracking-widest opacity-60">张开手掌，散开命运之牌。</p>
@@ -717,20 +1100,61 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit }) => {
           <p className="text-amber-500/80 font-serif italic tracking-widest animate-pulse">竖起手指，选择一条路径。</p>
         )}
         {gestureState === GestureState.SELECTED && (
-          <p className="text-white font-serif tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">摇动手指，揭示真理。</p>
+          <p className="text-white font-serif tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+            {currentPlan.type === 'spread' && currentPlan.cardCount > 1
+              ? (selectedCards.length < currentPlan.cardCount
+                  ? `摇动手指，抽取第 ${selectedCards.length + 1} 张。`
+                  : '已抽完，摇动手指一起翻开。')
+              : '摇动手指，揭示真理。'}
+          </p>
         )}
       </div>
 
       {gestureState === GestureState.REVEALED && (
-        <div className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-xl px-6 text-center transition-all duration-1000 z-30 ${reading ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <div className="bg-black/30 backdrop-blur-md p-8 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto">
+        <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-xl px-6 text-center transition-all duration-1000 z-30 opacity-100 translate-y-0">
+          <div
+            className="bg-black/30 backdrop-blur-md p-8 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto flex flex-col overflow-hidden"
+            style={{ height: 'min(42vh, 360px)' }}
+          >
+            {question.trim() !== '' && (
+              <div className="text-xs text-gray-500 tracking-widest uppercase mb-3">问题：{question}</div>
+            )}
+            <div className="text-xs text-gray-500 tracking-widest uppercase mb-4">
+              {currentPlan.type === 'spread' ? `${currentPlan.spreadName} · ${currentPlan.cardCount}张` : '单张牌占卜'}
+            </div>
+            <div className="text-[10px] text-gray-600 tracking-widest uppercase mb-4">
+              {(() => {
+                const info = getAiRuntimeInfo();
+                const last = getLastAiCall();
+                if (!info.hasKey) return `AI：未配置（本地含义） · ${info.model}`;
+                if (!last) return `AI：已配置 · ${info.model}`;
+                return `AI：${last.ok ? '成功' : '失败'} · ${info.model}`;
+              })()}
+            </div>
             <h3 className="text-amber-500 text-3xl font-serif mb-4 uppercase tracking-[0.2em] border-b border-amber-900/50 pb-4 inline-block">
-              {TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} {isReversed ? "(逆位)" : "(正位)"}
+              {currentPlan.type === 'spread'
+                ? currentPlan.spreadName
+                : `${selectedCards.length > 0 ? selectedCards[0].name : TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} ${(selectedCards[0]?.isReversed ?? isReversed) ? "(逆位)" : "(正位)"}`
+              }
             </h3>
-            <div className="text-gray-300 leading-loose font-serif text-lg min-h-[100px]">
-               {loadingReading ? (
-                   <span className="animate-pulse">正在向虚空寻求指引...</span>
-               ) : displayedReading}
+            {selectedCards.length > 1 && (
+              <div className="text-xs text-gray-400 tracking-widest mb-4">
+                {selectedCards.map((card, index) => {
+                  const label = card.position ? `${card.position}` : `位置${index + 1}`;
+                  return `${label}：${card.name}${card.isReversed ? '（逆）' : '（正）'}`;
+                }).join(' · ')}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto text-gray-300 leading-loose font-serif text-left text-lg">
+              {loadingReading ? (
+                <span className="animate-pulse">正在向虚空寻求指引...</span>
+              ) : isHtmlDisplayed ? (
+                <div dangerouslySetInnerHTML={{ __html: safeDisplayedHtml }} />
+              ) : renderedReading ? (
+                renderedReading
+              ) : (
+                <span className="text-gray-500">未收到解读内容。</span>
+              )}
             </div>
             <div className="mt-6 text-xs text-gray-600 uppercase tracking-widest">
                 握拳收起卡牌

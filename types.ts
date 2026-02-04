@@ -28,3 +28,24 @@ export interface Particle {
   size: number;
   color: string;
 }
+
+export type DivinationType = 'single' | 'spread';
+
+export interface DivinationPosition {
+  name: string;
+  meaning: string;
+}
+
+export interface DivinationPlan {
+  type: DivinationType;
+  spreadName: string;
+  cardCount: number;
+  positions: DivinationPosition[];
+}
+
+export interface DrawnCard {
+  name: string;
+  isReversed: boolean;
+  position?: string;
+  deckIndex?: number;
+}
