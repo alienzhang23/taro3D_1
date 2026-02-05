@@ -92,11 +92,14 @@ const sanitizeReadingHtml = (html: string): string => {
 
         if (!allowedTags.has(tag)) {
           const parent = el.parentNode;
-          if (parent) {
-            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+          if (!parent) return;
+          const text = el.textContent || '';
+          if (text) {
+            parent.replaceChild(doc.createTextNode(text), el);
+          } else {
             parent.removeChild(el);
-            return;
           }
+          return;
         } else {
           for (const attr of Array.from(el.attributes)) {
             const name = attr.name.toLowerCase();
@@ -1021,7 +1024,8 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
   const isHtmlDisplayed = renderedReading ? isProbablyHtml(renderedReading) : false;
   const safeDisplayedHtml = React.useMemo(() => {
     if (!renderedReading || !isHtmlDisplayed) return '';
-    return sanitizeReadingHtml(renderedReading);
+    const safe = sanitizeReadingHtml(renderedReading);
+    return safe || `<pre>${escapeHtml(renderedReading)}</pre>`;
   }, [renderedReading, isHtmlDisplayed]);
 
   return (
@@ -1111,7 +1115,18 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
       </div>
 
       {gestureState === GestureState.REVEALED && (
-        <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-xl px-6 text-center transition-all duration-1000 z-30 opacity-100 translate-y-0">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 text-center pointer-events-none w-full max-w-3xl px-6">
+          <h3 className="text-amber-500 text-3xl font-serif uppercase tracking-[0.2em] drop-shadow-[0_0_20px_rgba(212,175,55,0.35)]">
+            {currentPlan.type === 'spread'
+              ? currentPlan.spreadName
+              : `${selectedCards.length > 0 ? selectedCards[0].name : TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} ${(selectedCards[0]?.isReversed ?? isReversed) ? "(逆位)" : "(正位)"}`
+            }
+          </h3>
+        </div>
+      )}
+
+      {gestureState === GestureState.REVEALED && (
+        <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-3xl px-6 text-center transition-all duration-1000 z-30 opacity-100 translate-y-0">
           <div
             className="bg-black/30 backdrop-blur-md p-8 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto flex flex-col overflow-hidden"
             style={{ height: 'min(42vh, 360px)' }}
@@ -1131,12 +1146,6 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
                 return `AI：${last.ok ? '成功' : '失败'} · ${info.model}`;
               })()}
             </div>
-            <h3 className="text-amber-500 text-3xl font-serif mb-4 uppercase tracking-[0.2em] border-b border-amber-900/50 pb-4 inline-block">
-              {currentPlan.type === 'spread'
-                ? currentPlan.spreadName
-                : `${selectedCards.length > 0 ? selectedCards[0].name : TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} ${(selectedCards[0]?.isReversed ?? isReversed) ? "(逆位)" : "(正位)"}`
-              }
-            </h3>
             {selectedCards.length > 1 && (
               <div className="text-xs text-gray-400 tracking-widest mb-4">
                 {selectedCards.map((card, index) => {
