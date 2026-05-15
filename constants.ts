@@ -1,4 +1,5 @@
 
+import { publicAsset } from './utils/assets';
 
 export const TAROT_DECK = [
   "愚者", "魔术师", "女祭司", "皇后", "皇帝",
@@ -122,7 +123,7 @@ export const getCardImage = (cardName: string): string => {
   const filename = CARD_IMAGE_MAP[cardName];
   if (!filename) {
     console.warn(`Image not found for card: ${cardName}`);
-    return "/card_bg.jpg"; // Fallback to card back
+    return publicAsset('card_bg.jpg'); // Fallback to card back
   }
-  return `/cards/${filename}`;
+  return publicAsset(`cards/${filename}`);
 };

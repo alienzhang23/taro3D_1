@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      base: mode === 'production' ? (env.VITE_BASE_PATH || '/taro3D_1/') : '/',
       cacheDir: 'D:/workspace2/Taro/.vite-cache-taro3D_1',
       server: {
         port: 3000,

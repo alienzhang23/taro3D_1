@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { publicAsset } from '../utils/assets';
 
 export const MusicPlayer: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -56,7 +57,7 @@ export const MusicPlayer: React.FC = () => {
     <div className="fixed top-6 right-48 z-50">
       <audio 
         ref={audioRef} 
-        src="/bgm.mp3" 
+        src={publicAsset('bgm.mp3')} 
         loop 
         autoPlay
       />

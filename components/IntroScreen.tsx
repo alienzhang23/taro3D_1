@@ -9,6 +9,7 @@ import {
   setAiConfigForRuntime,
   testAiConnection
 } from '../services/geminiService';
+import { publicAsset } from '../utils/assets';
 
 interface IntroScreenProps {
   setMode: (mode: AppMode) => void;
@@ -116,7 +117,10 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({
 
   return (
     <div className="relative w-full h-screen flex flex-col items-center justify-center bg-black overflow-hidden">
-      <div className="absolute inset-0 bg-[url('/bg_universe.jpg')] opacity-20 bg-cover bg-center animate-pulse"></div>
+      <div
+        className="absolute inset-0 opacity-20 bg-cover bg-center animate-pulse"
+        style={{ backgroundImage: `url(${publicAsset('bg_universe.jpg')})` }}
+      ></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black"></div>
 
       <div className="z-10 text-center space-y-8 p-4 w-full max-w-2xl">

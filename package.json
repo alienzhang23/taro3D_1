@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:github": "vite build --base=/taro3D_1/",
+    "preview:github": "vite preview --base=/taro3D_1/",
     "preview": "vite preview"
   },
   "dependencies": {

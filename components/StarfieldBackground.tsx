@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { publicAsset } from '../utils/assets';
 
 interface Star {
   x: number;
@@ -79,7 +80,7 @@ export const StarfieldBackground: React.FC = () => {
       ref={canvasRef} 
       className="absolute inset-0 w-full h-full pointer-events-none"
       style={{ 
-        backgroundImage: 'url(/bg_universe.jpg)', 
+        backgroundImage: `url(${publicAsset('bg_universe.jpg')})`, 
         backgroundSize: 'cover', 
         backgroundPosition: 'center' 
       }}

@@ -4,6 +4,7 @@ import { DivinationPlan, DrawnCard, GestureState, Particle } from '../types';
 import { TAROT_DECK, TOTAL_CARDS, CARD_RATIO, getCardImage } from '../constants';
 import { getAiRuntimeInfo, getLastAiCall, getTarotReading } from '../services/geminiService';
 import { StarfieldBackground } from './StarfieldBackground';
+import { publicAsset } from '../utils/assets';
 
 interface CardEntity {
   id: number;
@@ -368,7 +369,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
   // Preload Card Back
   useEffect(() => {
     const img = new Image();
-    img.src = "/card_bg.jpg";
+    img.src = publicAsset('card_bg.jpg');
     img.onload = () => {
       loadedBackImageRef.current = img;
     };

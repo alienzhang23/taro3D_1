@@ -3,6 +3,7 @@ import { AppMode } from '../types';
 import { TAROT_DECK, getCardImage } from '../constants';
 import { getCardMeaning } from '../services/geminiService';
 import { TarotMeaning } from '../tarotMeanings';
+import { publicAsset } from '../utils/assets';
 
 interface LearnScreenProps {
   setMode: (mode: AppMode) => void;
@@ -50,7 +51,10 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({ setMode }) => {
         </div>
 
         {/* Right Content Area */}
-        <div className="w-2/3 md:w-3/4 relative bg-[url('/bg_universe.jpg')] bg-cover bg-center overflow-hidden">
+        <div
+          className="w-2/3 md:w-3/4 relative bg-cover bg-center overflow-hidden"
+          style={{ backgroundImage: `url(${publicAsset('bg_universe.jpg')})` }}
+        >
           {/* Background Overlay - Fixed relative to container */}
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-0"></div>
           
