@@ -1,6 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { AppMode } from '../types';
-import { getAiRuntimeInfo, setAiApiKeyForRuntime, testAiConnection } from '../services/geminiService';
+import {
+  fetchAiModels,
+  getAiRuntimeInfo,
+  getStoredAiModels,
+  setAiApiKeyForRuntime,
+  setAiConfigForRuntime,
+  testAiConnection
+} from '../services/geminiService';
 
 interface IntroScreenProps {
   setMode: (mode: AppMode) => void;
@@ -11,26 +18,68 @@ interface IntroScreenProps {
 }
 
 export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, setQuestion, onStart, loading }) => {
-  const aiInfo = useMemo(() => getAiRuntimeInfo(), []);
+  const [aiInfo, setAiInfo] = useState(() => getAiRuntimeInfo());
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [baseUrlInput, setBaseUrlInput] = useState(() => aiInfo.baseUrl);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [modelInput, setModelInput] = useState(() => aiInfo.model);
+  const [modelOptions, setModelOptions] = useState<string[]>(() => getStoredAiModels());
   const [aiStatusText, setAiStatusText] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [modelsBusy, setModelsBusy] = useState(false);
+
+  const refreshAiInfo = () => {
+    setAiInfo(getAiRuntimeInfo());
+  };
 
   const openAiSettings = () => {
+    const currentInfo = getAiRuntimeInfo();
+    setAiInfo(currentInfo);
     setAiStatusText(null);
+    setBaseUrlInput(currentInfo.baseUrl);
     setApiKeyInput('');
+    setModelInput(currentInfo.model);
+    setModelOptions(getStoredAiModels());
     setShowAiSettings(true);
   };
 
-  const saveKey = () => {
-    setAiApiKeyForRuntime(apiKeyInput.trim() ? apiKeyInput.trim() : null);
-    setAiStatusText('已保存到本地（刷新后生效）');
+  const saveSettings = () => {
+    setAiConfigForRuntime({
+      baseUrl: baseUrlInput,
+      ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {}),
+      model: modelInput
+    });
+    refreshAiInfo();
+    setModelOptions((items) => Array.from(new Set([modelInput, ...items])));
+    setAiStatusText('已保存到本地');
   };
 
   const clearKey = () => {
     setAiApiKeyForRuntime(null);
-    setAiStatusText('已清除（刷新后生效）');
+    refreshAiInfo();
+    setAiStatusText('已清除 API Key');
+  };
+
+  const fetchModelsNow = async () => {
+    if (modelsBusy) return;
+    setModelsBusy(true);
+    setAiStatusText(null);
+    try {
+      const models = await fetchAiModels({
+        baseUrl: baseUrlInput,
+        ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {})
+      });
+      setModelOptions(models);
+      if (!models.includes(modelInput)) {
+        setModelInput(models[0] || modelInput);
+      }
+      setAiStatusText(`获取模型成功：${models.length} 个`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setAiStatusText(`获取模型失败：${msg}`);
+    } finally {
+      setModelsBusy(false);
+    }
   };
 
   const testNow = async () => {
@@ -38,7 +87,12 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
     setAiBusy(true);
     setAiStatusText(null);
     try {
-      if (apiKeyInput.trim()) setAiApiKeyForRuntime(apiKeyInput.trim());
+      setAiConfigForRuntime({
+        baseUrl: baseUrlInput,
+        ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {}),
+        model: modelInput
+      });
+      refreshAiInfo();
       const text = await testAiConnection();
       setAiStatusText(`测试成功：${text.trim()}`);
     } catch (error) {
@@ -51,10 +105,9 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
 
   return (
     <div className="relative w-full h-screen flex flex-col items-center justify-center bg-black overflow-hidden">
-      {/* Background Ambience */}
       <div className="absolute inset-0 bg-[url('/bg_universe.jpg')] opacity-20 bg-cover bg-center animate-pulse"></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black"></div>
-      
+
       <div className="z-10 text-center space-y-8 p-4 w-full max-w-2xl">
         <h1 className="text-5xl md:text-7xl text-amber-500 tracking-[0.2em] uppercase font-bold drop-shadow-2xl mb-4">
           Arcana
@@ -70,7 +123,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
             onChange={(e) => setQuestion(e.target.value)}
             rows={3}
             className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-sm tracking-wide p-4 rounded-sm shadow-[0_0_20px_rgba(0,0,0,0.4)] placeholder:text-gray-600"
-            placeholder="请输入你想占卜的问题，例如：这段感情是否值得继续？"
+            placeholder="请输入你想占卜的问题，例如：这段关系是否值得继续？"
           />
         </div>
 
@@ -91,7 +144,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
             onClick={() => setMode(AppMode.LEARNING)}
             className="group relative px-8 py-4 bg-transparent border border-gray-600 text-gray-400 overflow-hidden transition-all duration-500 hover:text-white hover:border-white"
           >
-             <span className="relative z-10 tracking-widest text-sm uppercase">研习图谱</span>
+            <span className="relative z-10 tracking-widest text-sm uppercase">研习图鉴</span>
           </button>
 
           <button
@@ -125,20 +178,57 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
               </button>
             </div>
 
+            <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">Base URL</div>
+            <input
+              value={baseUrlInput}
+              onChange={(e) => setBaseUrlInput(e.target.value)}
+              className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-xs tracking-wide px-3 py-2 rounded-sm mb-4"
+              placeholder="https://api-inference.modelscope.cn/v1"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+            />
+
             <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">API Key</div>
             <input
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
               className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-xs tracking-wide px-3 py-2 rounded-sm"
-              placeholder="nvapi-..."
+              placeholder="sk-... / ms-..."
               type="password"
               autoComplete="off"
               spellCheck={false}
             />
 
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">Model</div>
+                <select
+                  value={modelInput}
+                  onChange={(e) => setModelInput(e.target.value)}
+                  className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-xs tracking-wide px-3 py-2 rounded-sm"
+                >
+                  {Array.from(new Set([modelInput, ...modelOptions])).map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={fetchModelsNow}
+                disabled={modelsBusy}
+                className={`self-end px-4 py-2 border uppercase text-xs tracking-widest transition-colors ${
+                  modelsBusy
+                    ? 'border-amber-900/40 text-amber-900/60 cursor-not-allowed'
+                    : 'border-gray-700 text-gray-400 hover:text-white hover:border-white'
+                }`}
+              >
+                {modelsBusy ? '获取中' : '获取模型'}
+              </button>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-3 mt-4">
               <button
-                onClick={saveKey}
+                onClick={saveSettings}
                 className="px-4 py-2 border border-amber-700 text-amber-500 hover:text-black hover:bg-amber-600 hover:border-amber-600 transition-colors uppercase text-xs tracking-widest"
               >
                 保存
@@ -147,7 +237,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
                 onClick={clearKey}
                 className="px-4 py-2 border border-gray-700 text-gray-400 hover:text-white hover:border-white transition-colors uppercase text-xs tracking-widest"
               >
-                清除
+                清除 Key
               </button>
               <button
                 onClick={testNow}
@@ -170,7 +260,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
           </div>
         </div>
       )}
-      
+
       <div className="absolute bottom-10 text-gray-600 text-xs tracking-widest uppercase">
         使用摄像头进行交互 · 开启声音体验更佳
       </div>

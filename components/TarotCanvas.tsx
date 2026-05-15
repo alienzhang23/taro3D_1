@@ -659,8 +659,9 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
     
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
-    const revealedCardLift = gestureState === GestureState.REVEALED 
-      ? -window.innerHeight * 0.05 - 50 // lift revealed card to avoid overlapping reading panel
+    const isDesktopReveal = gestureState === GestureState.REVEALED && window.innerWidth >= 900;
+    const revealedCardLift = gestureState === GestureState.REVEALED
+      ? (isDesktopReveal ? 0 : -window.innerHeight * 0.16)
       : 0;
     
     const currentEase = (gestureState === GestureState.SELECTED || gestureState === GestureState.REVEALED) ? 0.02 : 0.08;
@@ -668,12 +669,14 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
     const targetCount = isSpread ? currentPlan.cardCount : 1;
     const drawnDeckIndices = drawnDeckIndicesRef.current;
     const drawnSet = isSpread ? new Set<number>(drawnDeckIndices) : null;
-    const spreadSpacing = Math.min(window.innerWidth * 0.28, 260);
-    const revealSpacingX = Math.min(window.innerWidth * 0.22, 220);
-    const revealSpacingY = Math.min(window.innerHeight * 0.26, 240);
+    const revealedCardsCenterX = isDesktopReveal ? window.innerWidth * 0.24 : cx;
+    const revealedCardsCenterY = isDesktopReveal ? window.innerHeight * 0.48 : cy + revealedCardLift;
+    const spreadSpacing = isDesktopReveal ? Math.min(window.innerWidth * 0.085, 150) : Math.min(window.innerWidth * 0.28, 260);
+    const revealSpacingX = isDesktopReveal ? Math.min(window.innerWidth * 0.085, 150) : Math.min(window.innerWidth * 0.22, 220);
+    const revealSpacingY = isDesktopReveal ? Math.min(window.innerHeight * 0.21, 170) : Math.min(window.innerHeight * 0.26, 240);
     const revealCols = isSpread ? Math.min(5, targetCount) : 1;
     const revealRows = isSpread ? Math.ceil(targetCount / revealCols) : 1;
-    const revealBaseY = cy + revealedCardLift;
+    const revealBaseY = revealedCardsCenterY;
     const bottomY = window.innerHeight * 0.78;
     const bottomSpacing = Math.min(window.innerWidth * 0.08, 90);
     const bottomFan = 0.08;
@@ -725,18 +728,18 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
               card.targetRotY = 0;
             } else {
               if (targetCount === 3) {
-                card.targetX = cx + (order - 1) * spreadSpacing;
+                card.targetX = revealedCardsCenterX + (order - 1) * spreadSpacing;
                 card.targetY = revealBaseY;
-                card.targetZ = 2.6;
+                card.targetZ = isDesktopReveal ? 1.5 : 2.6;
                 card.targetRotZ = 0;
               } else {
                 const col = order % revealCols;
                 const row = Math.floor(order / revealCols);
                 const gridW = (revealCols - 1) * revealSpacingX;
                 const gridH = (revealRows - 1) * revealSpacingY;
-                card.targetX = cx - gridW / 2 + col * revealSpacingX;
+                card.targetX = revealedCardsCenterX - gridW / 2 + col * revealSpacingX;
                 card.targetY = revealBaseY - gridH / 2 + row * revealSpacingY;
-                card.targetZ = targetCount > 6 ? 1.9 : 2.2;
+                card.targetZ = isDesktopReveal ? (targetCount > 6 ? 1.1 : 1.25) : (targetCount > 6 ? 1.9 : 2.2);
                 card.targetRotZ = 0;
               }
               card.targetRotY = Math.PI;
@@ -766,9 +769,9 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
           }
         } else {
           if (isSelected) {
-            card.targetX = cx;
-            card.targetY = cy + revealedCardLift;
-            card.targetZ = 3.0; 
+            card.targetX = isDesktopReveal ? revealedCardsCenterX : cx;
+            card.targetY = isDesktopReveal ? revealedCardsCenterY : cy + revealedCardLift;
+            card.targetZ = isDesktopReveal ? 1.85 : 3.0; 
             card.targetRotZ = 0;
             card.targetRotY = gestureState === GestureState.REVEALED ? Math.PI : 0;
           } else {
@@ -1038,7 +1041,9 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
         ref={debugCanvasRef} 
         width={320} 
         height={240} 
-        className="absolute top-20 right-6 w-48 h-36 border border-amber-900/50 rounded-lg z-40 bg-black/80 shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+        className={`absolute top-20 right-6 w-48 h-36 border border-amber-900/50 rounded-lg z-40 bg-black/80 shadow-[0_0_20px_rgba(0,0,0,0.8)] ${
+          gestureState === GestureState.REVEALED ? 'hidden' : ''
+        }`}
       />
       
       <div className="absolute top-6 left-6 z-50 text-amber-600/50 font-mono text-xs tracking-widest pointer-events-none">
@@ -1115,8 +1120,8 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
       </div>
 
       {gestureState === GestureState.REVEALED && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 text-center pointer-events-none w-full max-w-3xl px-6">
-          <h3 className="text-amber-500 text-3xl font-serif uppercase tracking-[0.2em] drop-shadow-[0_0_20px_rgba(212,175,55,0.35)]">
+        <div className="absolute top-16 left-6 right-6 md:left-[4%] md:right-[56%] z-30 text-center pointer-events-none">
+          <h3 className="text-amber-500 text-2xl md:text-3xl font-serif uppercase tracking-[0.16em] drop-shadow-[0_0_20px_rgba(212,175,55,0.35)]">
             {currentPlan.type === 'spread'
               ? currentPlan.spreadName
               : `${selectedCards.length > 0 ? selectedCards[0].name : TAROT_DECK[selectedIndexRef.current % TAROT_DECK.length]} ${(selectedCards[0]?.isReversed ?? isReversed) ? "(逆位)" : "(正位)"}`
@@ -1125,12 +1130,40 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
         </div>
       )}
 
+      {gestureState === GestureState.REVEALED && currentPlan.type === 'spread' && selectedCards.length > 0 && (
+        <div className="absolute inset-0 z-30 pointer-events-none hidden md:block">
+          {selectedCards.map((card, index) => {
+            const count = Math.max(selectedCards.length, 1);
+            const cols = Math.min(5, count);
+            const row = Math.floor(index / cols);
+            const col = index % cols;
+            const xOffset = col - (cols - 1) / 2;
+            const rowOffset = row - (Math.ceil(count / cols) - 1) / 2;
+            const label = card.position || currentPlan.positions?.[index]?.name || `位置${index + 1}`;
+            return (
+              <div
+                key={`${label}-${index}`}
+                className="absolute -translate-x-1/2 text-amber-500 text-xl font-serif tracking-[0.12em] drop-shadow-[0_0_16px_rgba(212,175,55,0.45)] whitespace-nowrap"
+                style={{
+                  left: `calc(24vw + ${xOffset} * min(8.5vw, 150px))`,
+                  top: `calc(48vh - 150px + ${rowOffset} * min(21vh, 170px))`
+                }}
+              >
+                {label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {gestureState === GestureState.REVEALED && (
-        <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-full max-w-3xl px-6 text-center transition-all duration-1000 z-30 opacity-100 translate-y-0">
+        <div className="absolute left-4 right-4 top-[43vh] bottom-3 md:left-[46%] md:right-14 md:top-32 md:bottom-8 text-center transition-all duration-1000 z-30 opacity-100 translate-y-0">
           <div
-            className="bg-black/30 backdrop-blur-md p-8 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto flex flex-col overflow-hidden"
-            style={{ height: 'min(42vh, 360px)' }}
+            className="h-full bg-black/35 backdrop-blur-md p-5 md:p-7 border border-amber-900/30 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm pointer-events-auto flex flex-col overflow-hidden"
           >
+            <div className="text-amber-500 text-2xl md:text-3xl font-serif uppercase tracking-[0.16em] drop-shadow-[0_0_20px_rgba(212,175,55,0.35)] mb-6">
+              塔罗解读
+            </div>
             {question.trim() !== '' && (
               <div className="text-xs text-gray-500 tracking-widest uppercase mb-3">问题：{question}</div>
             )}
@@ -1154,7 +1187,7 @@ export const TarotCanvas: React.FC<TarotCanvasProps> = ({ onExit, question, plan
                 }).join(' · ')}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto text-gray-300 leading-loose font-serif text-left text-lg">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2 text-gray-300 leading-loose font-serif text-left text-base md:text-lg">
               {loadingReading ? (
                 <span className="animate-pulse">正在向虚空寻求指引...</span>
               ) : isHtmlDisplayed ? (
