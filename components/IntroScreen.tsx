@@ -4,6 +4,7 @@ import {
   fetchAiModels,
   getAiRuntimeInfo,
   getStoredAiModels,
+  PRESET_DIVINATION_PLANS,
   setAiApiKeyForRuntime,
   setAiConfigForRuntime,
   testAiConnection
@@ -13,11 +14,21 @@ interface IntroScreenProps {
   setMode: (mode: AppMode) => void;
   question: string;
   setQuestion: (value: string) => void;
+  selectedSpreadName: string;
+  setSelectedSpreadName: (value: string) => void;
   onStart: () => void;
   loading: boolean;
 }
 
-export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, setQuestion, onStart, loading }) => {
+export const IntroScreen: React.FC<IntroScreenProps> = ({
+  setMode,
+  question,
+  setQuestion,
+  selectedSpreadName,
+  setSelectedSpreadName,
+  onStart,
+  loading
+}) => {
   const [aiInfo, setAiInfo] = useState(() => getAiRuntimeInfo());
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [baseUrlInput, setBaseUrlInput] = useState(() => aiInfo.baseUrl);
@@ -93,8 +104,8 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
         model: modelInput
       });
       refreshAiInfo();
-      const text = await testAiConnection();
-      setAiStatusText(`测试成功：${text.trim()}`);
+      await testAiConnection();
+      setAiStatusText('测试成功');
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setAiStatusText(`测试失败：${msg}`);
@@ -125,6 +136,22 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ setMode, question, set
             className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-sm tracking-wide p-4 rounded-sm shadow-[0_0_20px_rgba(0,0,0,0.4)] placeholder:text-gray-600"
             placeholder="请输入你想占卜的问题，例如：这段关系是否值得继续？"
           />
+        </div>
+
+        <div className="mt-5 text-left">
+          <div className="text-xs tracking-widest uppercase text-gray-500 mb-3 text-center">牌阵选择</div>
+          <select
+            value={selectedSpreadName}
+            onChange={(e) => setSelectedSpreadName(e.target.value)}
+            className="w-full bg-black/40 border border-amber-900/40 focus:border-amber-500/70 outline-none text-gray-200 text-sm tracking-wide px-4 py-3 rounded-sm shadow-[0_0_20px_rgba(0,0,0,0.4)]"
+          >
+            <option value="">由 AI 根据问题判断</option>
+            {PRESET_DIVINATION_PLANS.map((plan) => (
+              <option key={plan.spreadName} value={plan.spreadName}>
+                {plan.spreadName}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-col md:flex-row gap-8 mt-10 justify-center items-center">

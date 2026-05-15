@@ -4,18 +4,20 @@ import { IntroScreen } from './components/IntroScreen';
 import { LearnScreen } from './components/LearnScreen';
 import { TarotCanvas } from './components/TarotCanvas';
 import { MusicPlayer } from './components/MusicPlayer';
-import { getDivinationPlan } from './services/geminiService';
+import { getDivinationPlan, getPresetDivinationPlan } from './services/geminiService';
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.LANDING);
   const [question, setQuestion] = useState('');
+  const [selectedSpreadName, setSelectedSpreadName] = useState('');
   const [plan, setPlan] = useState<DivinationPlan | null>(null);
   const [planning, setPlanning] = useState(false);
 
   const handleStart = async () => {
     if (planning) return;
     setPlanning(true);
-    const nextPlan = await getDivinationPlan(question);
+    const selectedPlan = selectedSpreadName ? getPresetDivinationPlan(selectedSpreadName) : null;
+    const nextPlan = selectedPlan || await getDivinationPlan(question);
     setPlan(nextPlan);
     setMode(AppMode.DRAWING);
     setPlanning(false);
@@ -29,6 +31,8 @@ const App: React.FC = () => {
           setMode={setMode}
           question={question}
           setQuestion={setQuestion}
+          selectedSpreadName={selectedSpreadName}
+          setSelectedSpreadName={setSelectedSpreadName}
           onStart={handleStart}
           loading={planning}
         />

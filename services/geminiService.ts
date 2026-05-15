@@ -35,7 +35,7 @@ const SPREAD_SELECTION_SYSTEM_PROMPT = `
 - 如果问题简单、开放、只需要一个核心提示，选择“单张牌”
 - 如果问题关注时间发展、趋势变化、阶段脉络，选择“三张牌：过去-现在-未来”
 - 如果问题关注当前困境和解决方向，选择“三张牌：现状-障碍-建议”
-- 如果问题明确涉及恋爱、伴侣、暧昧、复合、关系走向、双方互动，优先选择“四张牌：恋人金字塔”
+- 如果问题明确涉及恋爱、伴侣、暧昧、复合、关系走向、双方互动，优先选择“四张牌：恋人金字塔”，位置为“问卜者现状、问卜者对象现状、两个人的现状、两个人未来发展”
 - 如果问题复杂，涉及多步骤行动、结果和综合建议，选择“五张牌：现状-挑战-行动-结果-建议”
 - 只有当用户问题很复杂、需要深度拆解背景、阻碍、外部影响和长期趋势时，才选择“凯尔特十字”
 
@@ -219,6 +219,80 @@ export const testAiConnection = async (): Promise<string> => {
   return text;
 };
 
+export const PRESET_DIVINATION_PLANS: DivinationPlan[] = [
+  {
+    type: 'single',
+    spreadName: '单张牌',
+    cardCount: 1,
+    positions: [{ name: '主题', meaning: '问题核心' }]
+  },
+  {
+    type: 'spread',
+    spreadName: '三张牌：过去-现在-未来',
+    cardCount: 3,
+    positions: [
+      { name: '过去', meaning: '问题的根源与背景' },
+      { name: '现在', meaning: '当下的状态与核心能量' },
+      { name: '未来', meaning: '发展趋势与可能结果' }
+    ]
+  },
+  {
+    type: 'spread',
+    spreadName: '三张牌：现状-障碍-建议',
+    cardCount: 3,
+    positions: [
+      { name: '现状', meaning: '当前局面与核心状态' },
+      { name: '障碍', meaning: '阻碍进展的因素' },
+      { name: '建议', meaning: '可以采取的行动方向' }
+    ]
+  },
+  {
+    type: 'spread',
+    spreadName: '四张牌：恋人金字塔',
+    cardCount: 4,
+    positions: [
+      { name: '问卜者现状', meaning: '问卜者在关系中的状态、期待与内在需求' },
+      { name: '问卜者对象现状', meaning: '对方在关系中的状态、态度与可能顾虑' },
+      { name: '两个人的现状', meaning: '双方互动的现实状态与核心课题' },
+      { name: '两个人未来发展', meaning: '这段关系接下来的发展趋势' }
+    ]
+  },
+  {
+    type: 'spread',
+    spreadName: '五张牌：现状-挑战-行动-结果-建议',
+    cardCount: 5,
+    positions: [
+      { name: '现状', meaning: '当前局面' },
+      { name: '挑战', meaning: '需要面对的困难' },
+      { name: '行动', meaning: '建议采取的行动' },
+      { name: '结果', meaning: '可能的发展结果' },
+      { name: '建议', meaning: '整体提醒与建议' }
+    ]
+  },
+  {
+    type: 'spread',
+    spreadName: '凯尔特十字',
+    cardCount: 10,
+    positions: [
+      { name: '自身现状', meaning: '当前核心处境' },
+      { name: '不顺心的状况', meaning: '让提问者不顺心的状况、眼前阻碍与冲突' },
+      { name: '基础', meaning: '提问者建立在什么基础之上' },
+      { name: '过去', meaning: '已发生并仍在影响当下的背景' },
+      { name: '可能性', meaning: '可被看见的可能性与上方能量' },
+      { name: '近期未来', meaning: '短期发展趋势' },
+      { name: '内在自我状态', meaning: '提问者内在自我状态与立场' },
+      { name: '外在环境', meaning: '外部环境或他人影响' },
+      { name: '恐惧的因素', meaning: '内心担心、恐惧或压力来源' },
+      { name: '结果', meaning: '综合趋势与可能结果' }
+    ]
+  }
+];
+
+export const getPresetDivinationPlan = (spreadName: string): DivinationPlan | null => {
+  const plan = PRESET_DIVINATION_PLANS.find((item) => item.spreadName === spreadName);
+  return plan ? { ...plan, positions: plan.positions.map((position) => ({ ...position })) } : null;
+};
+
 const fallbackPlan: DivinationPlan = {
   type: 'single',
   spreadName: '单张牌',
@@ -327,7 +401,7 @@ export const getDivinationPlan = async (question: string): Promise<DivinationPla
       : fallbackPlan;
   }
 
-  const prompt = `根据用户问题，从以下牌阵中选择最合适的一个。\n\n可选牌阵：\n1. 单张牌（聚焦主题）\n   - spreadName: 单张牌\n   - cardCount: 1\n   - positions: 主题\n2. 三张牌：过去-现在-未来\n   - cardCount: 3\n   - positions: 过去、现在、未来\n3. 三张牌：现状-障碍-建议\n   - cardCount: 3\n   - positions: 现状、障碍、建议\n4. 四张牌：恋人金字塔\n   - cardCount: 4\n   - positions: 我方状态、对方状态、关系现状、发展建议\n   - 适用于恋爱、暧昧、复合、伴侣关系、双方互动、关系走向等问题\n5. 五张牌：现状-挑战-行动-结果-建议\n   - cardCount: 5\n   - positions: 现状、挑战、行动、结果、建议\n6. 凯尔特十字（10张）\n   - cardCount: 10\n   - positions: 现状、挑战、潜意识、过去、显意识、未来、自我、环境、希望与恐惧、结果\n\n请输出严格 JSON：\n{\n  \"type\": \"single\" | \"spread\",\n  \"spreadName\": \"牌阵名称\",\n  \"cardCount\": 数字,\n  \"positions\": [\n    {\"name\": \"位置名称\", \"meaning\": \"该位置含义\"}\n  ]\n}\n\n硬性要求：\n- 如果选择 single，必须返回 spreadName=\"单张牌\"，cardCount=1，positions 仅一项 name=\"主题\" meaning=\"问题核心\"\n- 如果选择恋人金字塔，必须返回 spreadName=\"四张牌：恋人金字塔\"，cardCount=4，并使用四个位置：我方状态、对方状态、关系现状、发展建议\n- positions.length 必须等于 cardCount\n- 不要输出 JSON 以外的内容\n\n用户问题：${question || '未提供具体问题'}`;
+  const prompt = `根据用户问题，从以下牌阵中选择最合适的一个。\n\n可选牌阵：\n1. 单张牌（聚焦主题）\n   - spreadName: 单张牌\n   - cardCount: 1\n   - positions: 主题\n2. 三张牌：过去-现在-未来\n   - cardCount: 3\n   - positions: 过去、现在、未来\n3. 三张牌：现状-障碍-建议\n   - cardCount: 3\n   - positions: 现状、障碍、建议\n4. 四张牌：恋人金字塔\n   - cardCount: 4\n   - positions: 问卜者现状、问卜者对象现状、两个人的现状、两个人未来发展\n   - 适用于恋爱、暧昧、复合、伴侣关系、双方互动、关系走向等问题\n5. 五张牌：现状-挑战-行动-结果-建议\n   - cardCount: 5\n   - positions: 现状、挑战、行动、结果、建议\n6. 凯尔特十字（10张）\n   - cardCount: 10\n   - positions: 自身现状、不顺心的状况、基础、过去、可能性、近期未来、内在自我状态、外在环境、恐惧的因素、结果\n\n请输出严格 JSON：\n{\n  \"type\": \"single\" | \"spread\",\n  \"spreadName\": \"牌阵名称\",\n  \"cardCount\": 数字,\n  \"positions\": [\n    {\"name\": \"位置名称\", \"meaning\": \"该位置含义\"}\n  ]\n}\n\n硬性要求：\n- 如果选择 single，必须返回 spreadName=\"单张牌\"，cardCount=1，positions 仅一项 name=\"主题\" meaning=\"问题核心\"\n- 如果选择恋人金字塔，必须返回 spreadName=\"四张牌：恋人金字塔\"，cardCount=4，并使用四个位置：问卜者现状、问卜者对象现状、两个人的现状、两个人未来发展\n- 如果选择凯尔特十字，必须返回 spreadName=\"凯尔特十字\"，cardCount=10，并使用十个位置：自身现状、不顺心的状况、基础、过去、可能性、近期未来、内在自我状态、外在环境、恐惧的因素、结果\n- positions.length 必须等于 cardCount\n- 不要输出 JSON 以外的内容\n\n用户问题：${question || '未提供具体问题'}`;
 
   try {
     const text = await modelscopeChat([
